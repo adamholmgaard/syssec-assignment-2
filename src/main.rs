@@ -32,7 +32,7 @@ fn main() {
     // no filter: empty string
     // experimental protocol: ip protochain 253
     // TCP protocol: tcp
-    let filter = "tcp and host 80.249.99.148";
+    let filter = "tcp and host 90.130.70.73";
     cap.filter(filter, true).expect("filter error");
 
     println!("listening on interface {} for packets...", interface);
