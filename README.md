@@ -39,6 +39,8 @@ sudo ./target/debug/syssec-assignment-2 'source_ip' 'dest_ip' dupack
 
 ### Task 3
 
+Here one also need to run the example simple-website. This can be done as described in the assignment description.
+
 - Hijack attack:
 
 ```shell
