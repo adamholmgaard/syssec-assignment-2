@@ -19,22 +19,29 @@ Depending on your OS, you may need additional installations.
 
 Since there are two attacks for task 2 there are two different run commands. Furthermore since the program needs special permissions we run the code with:
 
+```shell
 sudo ./target/debug/syssec-assignment-2
+```
 
 Then since the code takes the attack and source and destination ips as input these should be included.
 
 - RST attack:
 
+```shell
 sudo ./target/debug/syssec-assignment-2 'source_ip' 'dest_ip' rst
+```
 
 - DupAck attack:
 
+```shell
 sudo ./target/debug/syssec-assignment-2 'source_ip' 'dest_ip' dupack
+```
 
 ### Task 3
 
 - Hijack attack:
 
+```shell
 sudo ./target/debug/syssec-assignment-2 'source_ip' 'dest_ip' hijack
-
+```
 
