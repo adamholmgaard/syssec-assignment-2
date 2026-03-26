@@ -27,10 +27,24 @@ TODO
 
 ## Task 2
 
-TODO how to run task 2  
+Since there are two attacks for task 2 there are two different run commands. Furthermore since the program needs special permissions we run the code with:
+
+sudo ./target/debug/syssec-assignment-2
+
+Then since the code takes the attack and source and destination ips as input these should be included.
+
+### RST attack:
+
+sudo ./target/debug/syssec-assignment-2 'source_ip' 'dest_ip' rst
+
+### DupAck attack:
+
+sudo ./target/debug/syssec-assignment-2 'source_ip' 'dest_ip' dupack
 
 ## Task 3
 
-TODO how to run task 3
+### Hijack attack:
+
+sudo ./target/debug/syssec-assignment-2 'source_ip' 'dest_ip' hijack
 
 
