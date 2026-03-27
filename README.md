@@ -15,17 +15,17 @@ Depending on your OS, you may need additional installations.
 
 ## Linux
 
-Since we have used VirtualBox in combination with a host machine (either windows or mac) as the malicious node, we provide the run commands for linux
+We have used VirtualBox in combination with a host machine (either windows or mac) as the malicious node, we provide the run commands for linux
 
 ### Task 2
 
-Since there are two attacks for task 2 there are two different run commands. Furthermore since the program needs special permissions we run the code with:
+For task 2 there are two different attacks hence two run commands. The program needs special permissions so we run the code with:
 
 ```shell
 sudo ./target/debug/syssec-assignment-2
 ```
 
-Then since the code takes the attack and source and destination ips as input these should be included.
+The code takes as input a source and destination ip aswell as the attack type.
 
 - RST attack
 
@@ -41,7 +41,7 @@ sudo ./target/debug/syssec-assignment-2 'source_ip' 'dest_ip' dupack
 
 ### Task 3
 
-Here one also need to run the example simple-website. This can be done as described in the assignment description.
+For task 3 there is only a single hijacking attack. We use the simple website as target in this task, otherwise the setup is the same
 
 - Hijack attack
 
