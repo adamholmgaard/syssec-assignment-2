@@ -1,7 +1,6 @@
 use std::process::{Command, Stdio};
 
 /// Network information about the OS interface running the code.
-///
 /// Is fetched this way since it should not be stored on git.
 pub struct OsInfo {
     pub interface: String,
@@ -10,7 +9,7 @@ pub struct OsInfo {
 }
 
 impl OsInfo {
-    /// Fetch the OS info
+    /// Fetch the OS info.
     pub fn fetch() -> Result<Self, String> {
         let interface = Self::get_interface();
         let script = "./fetch_os.sh";
@@ -59,6 +58,7 @@ impl OsInfo {
         })
     }
 
+    /// Get the OS interface.
     pub fn get_interface() -> String {
         #[cfg(target_os = "macos")]
         let interface = "en0".to_string();
